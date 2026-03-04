@@ -3,12 +3,12 @@ name: Build and Push
 on:
   push:
     branches:
-      - main
+      - master
     tags:
-      - 'v*'
+      - "v*"
   pull_request:
     branches:
-      - main
+      - masterß
   workflow_dispatch:
 
 env:
