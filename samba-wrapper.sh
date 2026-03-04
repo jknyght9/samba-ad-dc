@@ -32,5 +32,5 @@ log "Starting Samba AD DC..."
 
 # Start samba in foreground mode
 # -i: interactive (foreground)
-# -M single: don't fork child processes for each connection
-exec /usr/sbin/samba -i --debug-stderr
+# --debug-stdout: send debug output to stdout (captured by supervisor)
+exec /usr/sbin/samba -i --debug-stdout
