@@ -11,12 +11,9 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [samba-wrapper] $1"
 }
 
-# Wait a moment to ensure any previous samba processes are fully stopped
-sleep 2
+log "Samba wrapper starting..."
 
-# Kill any zombie samba processes (shouldn't happen but just in case)
-pkill -9 samba 2>/dev/null || true
-pkill -9 smbd 2>/dev/null || true
+# Brief pause to ensure entrypoint cleanup is complete
 sleep 1
 
 # Verify smb.conf exists
