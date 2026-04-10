@@ -89,7 +89,7 @@ provision_domain() {
     # Remove any stale data
     rm -rf /var/lib/samba/*
     rm -rf /var/cache/samba/*
-    rm -f /etc/samba/smb.conf
+    : > /etc/samba/smb.conf
 
     # Build provisioning options
     local PROVISION_OPTS=(
@@ -127,7 +127,7 @@ join_domain() {
     # Remove any stale data
     rm -rf /var/lib/samba/*
     rm -rf /var/cache/samba/*
-    rm -f /etc/samba/smb.conf
+    : > /etc/samba/smb.conf
 
     # Wait for primary DC to be available
     log "Waiting for primary DC at $DCIP to be available..."
