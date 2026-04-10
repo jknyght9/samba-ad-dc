@@ -253,20 +253,9 @@ else
     apply_settings
 fi
 
-# Persist smb.conf to the bind-mounted volume so it survives container
-# restarts. On subsequent starts, restore it from the volume.
-SMB_CONF_BACKUP="/var/lib/samba/smb.conf.bak"
-if [ -f "$SMB_CONF_BACKUP" ] && ! is_ad_config "/etc/samba/smb.conf"; then
-    log "Restoring AD smb.conf from persistent volume..."
-    cp "$SMB_CONF_BACKUP" /etc/samba/smb.conf
-fi
-
-# Update configuration
+# Update configuration (smb.conf is bind-mounted from host, so changes persist)
 update_smb_conf
 apply_settings
-
-# Save the current (working) smb.conf to persistent storage
-cp /etc/samba/smb.conf "$SMB_CONF_BACKUP"
 
 # Ensure samba is stopped before supervisor takes over
 stop_samba
