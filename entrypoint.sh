@@ -91,16 +91,26 @@ provision_domain() {
     rm -rf /var/cache/samba/*
     rm -f /etc/samba/smb.conf
 
-    # Provision the domain
-    samba-tool domain provision \
-        --realm="$REALM" \
-        --domain="$DOMAINNAME" \
-        --server-role=dc \
-        --dns-backend=SAMBA_INTERNAL \
-        --adminpass="$DOMAINPASS" \
-        --host-ip="$HOSTIP" \
-        --option="dns forwarder = $DNSFORWARDER" \
+    # Build provisioning options
+    local PROVISION_OPTS=(
+        --realm="$REALM"
+        --domain="$DOMAINNAME"
+        --server-role=dc
+        --dns-backend=SAMBA_INTERNAL
+        --adminpass="$DOMAINPASS"
+        --host-ip="$HOSTIP"
+        --option="dns forwarder = $DNSFORWARDER"
         --use-rfc2307
+    )
+
+    # Disable complexity during provisioning if requested, so the
+    # admin password doesn't need to meet the default policy
+    if [ "$NOCOMPLEXITY" = "true" ]; then
+        PROVISION_OPTS+=(--option="check password script = /bin/true")
+    fi
+
+    # Provision the domain
+    samba-tool domain provision "${PROVISION_OPTS[@]}"
 
     log "Domain provisioned successfully"
 }
@@ -137,37 +147,62 @@ join_domain() {
         exit 1
     fi
 
-    # Join the domain
-    samba-tool domain join "$REALM" DC \
-        --dns-backend=SAMBA_INTERNAL \
-        --realm="$REALM" \
-        --username=Administrator \
-        --password="$DOMAINPASS" \
-        --server="$DCIP" \
-        --site="$JOINSITE" \
+    # Build join options
+    local JOIN_OPTS=(
+        --dns-backend=SAMBA_INTERNAL
+        --realm="$REALM"
+        --username=Administrator
+        --password="$DOMAINPASS"
+        --server="$DCIP"
+        --site="$JOINSITE"
         --option="dns forwarder = $DNSFORWARDER"
+    )
+
+    if [ "$NOCOMPLEXITY" = "true" ]; then
+        JOIN_OPTS+=(--option="check password script = /bin/true")
+    fi
+
+    # Join the domain
+    samba-tool domain join "$REALM" DC "${JOIN_OPTS[@]}"
 
     log "Successfully joined domain as replica DC"
 }
 
-# Apply post-provisioning settings
+# Apply smb.conf-level settings (runs before Samba starts)
 apply_settings() {
-    log "Applying post-provisioning settings..."
+    log "Applying smb.conf settings..."
 
-    # Disable password complexity if requested
-    if [ "$NOCOMPLEXITY" = "true" ]; then
-        log "Disabling password complexity..."
-        samba-tool domain passwordsettings set --complexity=off 2>/dev/null || true
-        samba-tool domain passwordsettings set --min-pwd-length=1 2>/dev/null || true
-        samba-tool domain passwordsettings set --min-pwd-age=0 2>/dev/null || true
-        samba-tool domain passwordsettings set --max-pwd-age=0 2>/dev/null || true
-    fi
-
-    # Enable insecure LDAP if requested (for testing)
+    # Enable insecure LDAP if requested (for AD replication compatibility)
     if [ "$INSECURELDAP" = "true" ]; then
-        log "Enabling insecure LDAP binds..."
         if ! grep -q "ldap server require strong auth" /etc/samba/smb.conf; then
             sed -i '/\[global\]/a\\tldap server require strong auth = no' /etc/samba/smb.conf
+        fi
+    fi
+}
+
+# Apply runtime settings that require a running Samba (runs in background
+# after supervisor starts Samba)
+apply_runtime_settings() {
+    if [ "$NOCOMPLEXITY" = "true" ]; then
+        # Wait for Samba to be ready
+        local retries=30
+        while [ $retries -gt 0 ]; do
+            if samba-tool domain passwordsettings show >/dev/null 2>&1; then
+                break
+            fi
+            sleep 2
+            retries=$((retries - 1))
+        done
+
+        if [ $retries -gt 0 ]; then
+            log "Disabling password complexity..."
+            samba-tool domain passwordsettings set --complexity=off 2>/dev/null || true
+            samba-tool domain passwordsettings set --min-pwd-length=1 2>/dev/null || true
+            samba-tool domain passwordsettings set --min-pwd-age=0 2>/dev/null || true
+            samba-tool domain passwordsettings set --max-pwd-age=0 2>/dev/null || true
+            log "Password complexity settings applied"
+        else
+            log "WARNING: Samba not ready, skipping password settings"
         fi
     fi
 }
@@ -235,6 +270,10 @@ cp /etc/samba/smb.conf "$SMB_CONF_BACKUP"
 
 # Ensure samba is stopped before supervisor takes over
 stop_samba
+
+# Apply runtime settings (password complexity, etc.) in background after
+# Samba starts — these need a running Samba to talk to the AD database
+apply_runtime_settings &
 
 log "Starting supervisor to manage services..."
 exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf
