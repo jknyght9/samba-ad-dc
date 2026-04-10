@@ -31,6 +31,14 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# sed -i replacement that works on bind-mounted files (sed -i uses
+# rename() which fails with "Device or resource busy" on bind mounts)
+sed_inplace() {
+    local tmpf
+    tmpf=$(mktemp)
+    sed "$@" > "$tmpf" && cp "$tmpf" "${@: -1}" && rm -f "$tmpf"
+}
+
 # Check if domain is already provisioned (data exists)
 is_provisioned() {
     [ -f "/var/lib/samba/private/sam.ldb" ]
@@ -175,7 +183,7 @@ apply_settings() {
     # Enable insecure LDAP if requested (for AD replication compatibility)
     if [ "$INSECURELDAP" = "true" ]; then
         if ! grep -q "ldap server require strong auth" /etc/samba/smb.conf; then
-            sed -i '/\[global\]/a\\tldap server require strong auth = no' /etc/samba/smb.conf
+            sed_inplace '/\[global\]/a\\tldap server require strong auth = no' /etc/samba/smb.conf
         fi
     fi
 }
@@ -213,12 +221,12 @@ update_smb_conf() {
 
     # Ensure bind interfaces are set correctly
     if ! grep -q "interfaces" /etc/samba/smb.conf; then
-        sed -i "/\[global\]/a\\\\tinterfaces = lo $HOSTIP\\n\\tbind interfaces only = yes" /etc/samba/smb.conf
+        sed_inplace "/\[global\]/a\\\\tinterfaces = lo $HOSTIP\\n\\tbind interfaces only = yes" /etc/samba/smb.conf
     fi
 
     # Add DNS forwarder if not present
     if ! grep -q "dns forwarder" /etc/samba/smb.conf; then
-        sed -i "/\[global\]/a\\\\tdns forwarder = $DNSFORWARDER" /etc/samba/smb.conf
+        sed_inplace "/\[global\]/a\\\\tdns forwarder = $DNSFORWARDER" /etc/samba/smb.conf
     fi
 }
 
